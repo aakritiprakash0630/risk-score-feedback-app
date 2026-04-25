@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-
+# -------------------------------
+# Title
+# -------------------------------
 st.title("AI Risk Scoring with Feedback Loop")
 
 st.markdown("""
@@ -10,6 +12,9 @@ st.markdown("""
 Input Features → Initial Prediction → User Feedback → Retraining → Updated Prediction
 """)
 
+# -------------------------------
+# Dataset (Synthetic)
+# -------------------------------
 data = pd.DataFrame({
     "user_id": [1,2,3,4,5],
     "suspicious_activity": [0.9, 0.6, 0.2, 0.8, 0.5],
@@ -20,28 +25,38 @@ data = pd.DataFrame({
 
 st.info("Expected score represents benchmark (ground truth) for evaluation")
 
+# -------------------------------
+# Baseline Model
+# -------------------------------
 def predict(features, weights):
     return sum(w * x for w, x in zip(weights, features))
 
 weights = [0.4, 0.3, 0.3]
 
-st.subheader("Model Explainability")
-st.write("Initial Weights:", weights)
+st.subheader("Initial Model Weights")
+st.write(weights)
 
-
+# -------------------------------
+# Initial Prediction
+# -------------------------------
 predictions = []
-for i, row in data.iterrows():
+for _, row in data.iterrows():
     features = [
         row['suspicious_activity'],
         row['file_access_freq'],
         row['off_hours_access']
     ]
-    pred = predict(features, weights)
-    predictions.append(pred)
+    predictions.append(predict(features, weights))
 
 data["predicted_score"] = predictions
 
+# 👉 SHOW TABLE (you were missing this)
+st.subheader("Risk Score Dashboard")
+st.dataframe(data)
 
+# -------------------------------
+# Feedback Input
+# -------------------------------
 st.subheader("User Feedback Input")
 
 feedback_list = []
@@ -50,25 +65,35 @@ for i, row in data.iterrows():
     fb = st.slider(
         f"User {row['user_id']} Feedback",
         0.0, 1.0,
-        float(row["predicted_score"])
+        float(row["predicted_score"]),
+        key=f"user_{i}"
     )
     feedback_list.append(fb)
 
+# -------------------------------
+# AIRS Formula
+# -------------------------------
 def apply_feedback(ai_score, user_score, alpha=0.6):
     return ai_score + alpha * (user_score - ai_score)
 
+# -------------------------------
+# Retraining
+# -------------------------------
 def retrain(weights, X, feedbacks, lr=0.01, lambda_=5):
+    new_weights = weights.copy()
     for i in range(len(X)):
-        pred = sum(w * x for w, x in zip(weights, X[i]))
+        pred = sum(w * x for w, x in zip(new_weights, X[i]))
         error = pred - feedbacks[i]
 
-        weights = [
+        new_weights = [
             w - lr * lambda_ * error * x
-            for w, x in zip(weights, X[i])
+            for w, x in zip(new_weights, X[i])
         ]
-    return weights
+    return new_weights
 
-
+# -------------------------------
+# Retrain Button
+# -------------------------------
 if st.button("Retrain Model"):
 
     X = data[[
@@ -79,7 +104,8 @@ if st.button("Retrain Model"):
 
     new_weights = retrain(weights, X, feedback_list)
 
-    st.write("Updated Weights:", new_weights)
+    st.subheader("Updated Weights")
+    st.write(new_weights)
 
     updated_scores = []
 
@@ -91,54 +117,36 @@ if st.button("Retrain Model"):
         ]
 
         ai_pred = predict(features, new_weights)
-
-        # Apply AIRS feedback adjustment
         updated = apply_feedback(ai_pred, feedback_list[i])
-
         updated_scores.append(updated)
 
     data["updated_score"] = updated_scores
 
     st.success("Model Retrained Successfully!")
 
-st.subheader("Model Output Comparison")
-
-if "updated_score" in data:
+    # -------------------------------
+    # Results
+    # -------------------------------
+    st.subheader("Model Output Comparison")
 
     data["original_error"] = abs(data["predicted_score"] - data["expected_score"])
     data["updated_error"] = abs(data["updated_score"] - data["expected_score"])
 
     data["improved"] = data["updated_error"] < data["original_error"]
 
-    # Table
-    st.dataframe(data[[
-        "user_id",
-        "predicted_score",
-        "expected_score",
-        "updated_score",
-        "original_error",
-        "updated_error",
-        "improved"
-    ]])
+    st.dataframe(data)
 
-    # Scores
-    st.write("Original Scores:", data["predicted_score"].tolist())
-    st.write("Updated Scores:", data["updated_score"].tolist())
-
-    # Error Comparison
-    st.subheader("Error Comparison")
-
-    st.write("Average Original Error:", data["original_error"].mean())
-    st.write("Average Updated Error:", data["updated_error"].mean())
-
+    # -------------------------------
     # Graph
+    # -------------------------------
     st.subheader("Error Improvement Graph")
 
-    plt.figure()
-    plt.plot(data["original_error"], label="Original Error")
-    plt.plot(data["updated_error"], label="Updated Error")
-    plt.legend()
-    st.pyplot(plt)
+    fig, ax = plt.subplots()
+    ax.plot(data["original_error"], label="Original Error")
+    ax.plot(data["updated_error"], label="Updated Error")
+    ax.legend()
+
+    st.pyplot(fig)
 
 else:
-    st.write("Click 'Retrain Model' to see updated results.")
+    st.info("Click 'Retrain Model' to see updated results.")
